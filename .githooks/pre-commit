@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Keeps README.md's "Latest results" in step with the code: when a commit touches benchmark
+# code, re-run the suites and stage the regenerated results into the same commit.
+#
+# Enable once with ./bench setup. Engines come from DATABENCH_ENGINES (default:
+# "sqlite postgres sqlserver"); DATABENCH_LOAD=1 adds the concurrency run.
+# Skip for one commit with DATABENCH_SKIP=1 git commit ... (or git commit --no-verify).
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+[[ -n "${DATABENCH_SKIP:-}" ]] && exit 0
+if ! git diff --cached --name-only | grep -qE '^(src/|docker/|Directory\.Packages\.props)'; then
+  exit 0
+fi
+
+echo "pre-commit: benchmark code changed; running ./bench publish (DATABENCH_SKIP=1 to skip)"
+./bench publish
+git add README.md results

@@ -1,0 +1,23 @@
+<Project>
+  <PropertyGroup>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup Label="Data access">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="MySql.EntityFrameworkCore" Version="10.0.12" />
+    <PackageVersion Include="Dapper" Version="2.1.89" />
+    <!-- Transitive pin: Microsoft.Data.SqlClient 6.1.x pulls a vulnerable 9.0.x build. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
+  </ItemGroup>
+  <ItemGroup Label="Benchmarking and data">
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageVersion Include="Bogus" Version="35.6.5" />
+  </ItemGroup>
+  <ItemGroup Label="Tests">
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- BenchmarkDotNet needs optimized builds; ./bench always runs Release. -->
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DataBenchmarks.Scenarios\DataBenchmarks.Scenarios.csproj" />
+  </ItemGroup>
+</Project>

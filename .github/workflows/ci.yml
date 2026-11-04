@@ -1,0 +1,39 @@
+name: CI
+
+# Build, enforce the conventions, and prove every approach agrees on every engine.
+# Benchmarks themselves run locally (./bench publish, via the pre-commit hook) so the
+# published numbers come from a quiet machine, not a shared CI runner.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["results/**", "**.md"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - run: dotnet build -c Release DataBenchmarks.slnx
+      - name: Conventions and correctness tests (SQLite)
+        run: dotnet test -c Release --no-build --solution DataBenchmarks.slnx
+
+  verify-engines:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [postgres, sqlserver]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Smoke run (seed, verify, dry benchmark)
+        run: ./bench ${{ matrix.engine }} --dataset small --job dry

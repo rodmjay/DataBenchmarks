@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataBenchmarks</title>
+<meta name="description" content="EF Core vs Dapper vs ADO.NET benchmarks across SQLite, PostgreSQL and SQL Server.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#fff; --fg:#1f2328; --muted:#59636e; --card:#f6f8fa; --border:#d1d9e0; --accent:#0969da; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --card:#151b23; --border:#3d444d; --accent:#4493f8; }
+  }
+  :root[data-theme="dark"] { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --card:#151b23; --border:#3d444d; --accent:#4493f8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { margin:0 0 4px; font-size:28px; }
+  h2 { margin:32px 0 4px; font-size:20px; }
+  p, .muted { color:var(--muted); }
+  a { color:var(--accent); }
+  .controls { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; }
+  select { font:inherit; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--fg); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px; margin-top:12px; }
+  .chart { position:relative; height:320px; }
+  .empty { padding:40px; text-align:center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DataBenchmarks</h1>
+  <p>EF Core approaches against Dapper and hand-written ADO.NET on every engine. Bars show time per operation as a multiple of the ADO.NET baseline on the same engine (lower is better). Source and method: <a href="https://github.com/rodmjay/DataBenchmarks">github.com/rodmjay/DataBenchmarks</a>.</p>
+  <div class="controls">
+    <label>Scenario <select id="scenario"></select></label>
+    <label>Engine for trend <select id="engine"></select></label>
+  </div>
+  <div id="content">
+    <h2>Latest run: ratio to ADO.NET</h2>
+    <div class="card"><div class="chart"><canvas id="latest"></canvas></div></div>
+    <h2>Trend: mean time per operation</h2>
+    <p class="muted">One point per run. Absolute times depend on the machine recorded with each run.</p>
+    <div class="card"><div class="chart"><canvas id="trend"></canvas></div></div>
+    <h2>Under load: throughput by concurrency</h2>
+    <div class="card"><div class="chart"><canvas id="load"></canvas></div></div>
+  </div>
+</main>
+<script>
+const palette = ["#4269d0","#efb118","#ff725c","#6cc5b0","#3ca951","#ff8ab7","#a463f2","#97bbf5","#9c6b4e","#9498a0"];
+const charts = {};
+const $ = id => document.getElementById(id);
+const key = r => `${r.category}/${r.scenario}` + (r.parameters ? ` (${r.parameters})` : "");
+
+function draw(id, config) {
+  charts[id]?.destroy();
+  const css = getComputedStyle(document.documentElement);
+  Chart.defaults.color = css.getPropertyValue("--muted").trim();
+  Chart.defaults.borderColor = css.getPropertyValue("--border").trim();
+  charts[id] = new Chart($(id), { ...config, options: { responsive: true, maintainAspectRatio: false, ...config.options } });
+}
+
+fetch("data/history.json").then(r => r.json()).then(data => {
+  const records = data.records;
+  if (!records.length) { $("content").innerHTML = '<div class="card empty">No results published yet.</div>'; return; }
+  const scenarios = [...new Set(records.map(key))].sort();
+  const engines = [...new Set(records.map(r => r.engine))];
+  $("scenario").innerHTML = scenarios.map(s => `<option>${s}</option>`).join("");
+  $("engine").innerHTML = engines.map(e => `<option>${e}</option>`).join("");
+  const order = Object.keys(data.approaches);
+  const byOrder = (a, b) => order.indexOf(a) - order.indexOf(b);
+
+  function render() {
+    const scenario = $("scenario").value, engine = $("engine").value;
+    const rows = records.filter(r => key(r) === scenario);
+    const approaches = [...new Set(rows.map(r => r.approach))].sort(byOrder);
+
+    // Latest run per engine: ratio to that run's baseline.
+    const latestRun = e => rows.filter(r => r.engine === e).reduce((m, r) => r.run.runAt > m ? r.run.runAt : m, "");
+    draw("latest", {
+      type: "bar",
+      data: { labels: approaches, datasets: engines.map((e, i) => {
+        const run = rows.filter(r => r.engine === e && r.run.runAt === latestRun(e));
+        const base = run.find(r => r.baseline);
+        return { label: e, backgroundColor: palette[i % palette.length],
+          data: approaches.map(a => { const r = run.find(x => x.approach === a); return r && base ? +(r.meanNs / base.meanNs).toFixed(2) : null; }) };
+      }) },
+      options: { scales: { y: { beginAtZero: true, title: { display: true, text: "× ADO.NET" } } } },
+    });
+
+    const runs = [...new Set(rows.filter(r => r.engine === engine).map(r => r.run.runAt))].sort();
+    draw("trend", {
+      type: "line",
+      data: { labels: runs.map(t => t.slice(0, 16).replace("T", " ")), datasets: approaches.map((a, i) => ({
+        label: a, borderColor: palette[i % palette.length], backgroundColor: palette[i % palette.length], spanGaps: true,
+        data: runs.map(t => { const r = rows.find(x => x.engine === engine && x.approach === a && x.run.runAt === t); return r ? +(r.meanNs / 1000).toFixed(2) : null; }) })) },
+      options: { scales: { y: { beginAtZero: true, title: { display: true, text: "µs per operation" } } } },
+    });
+
+    const load = (data.load || []).filter(r => `${r.category}/${r.scenario}` === scenario.replace(/ \(.*\)$/, "") && r.engine === engine);
+    const lastLoad = load.reduce((m, r) => r.runAt > m ? r.runAt : m, "");
+    const latestLoad = load.filter(r => r.runAt === lastLoad);
+    const levels = [...new Set(latestLoad.map(r => `${r.level} (${r.concurrency})`))];
+    draw("load", {
+      type: "bar",
+      data: { labels: levels, datasets: [...new Set(latestLoad.map(r => r.approach))].sort(byOrder).map((a, i) => ({
+        label: a, backgroundColor: palette[i % palette.length],
+        data: levels.map(l => { const r = latestLoad.find(x => x.approach === a && `${x.level} (${x.concurrency})` === l); return r ? Math.round(r.opsPerSecond) : null; }) })) },
+      options: { scales: { y: { beginAtZero: true, title: { display: true, text: "operations / second" } } } },
+    });
+  }
+  $("scenario").onchange = render;
+  $("engine").onchange = render;
+  render();
+}).catch(() => { $("content").innerHTML = '<div class="card empty">Could not load results.</div>'; });
+</script>
+</body>
+</html>

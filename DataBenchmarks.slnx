@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DataBenchmarks.Core/DataBenchmarks.Core.csproj" />
+    <Project Path="src/DataBenchmarks.Reporting/DataBenchmarks.Reporting.csproj" />
+    <Project Path="src/DataBenchmarks.Runner/DataBenchmarks.Runner.csproj" />
+    <Project Path="src/DataBenchmarks.Scenarios/DataBenchmarks.Scenarios.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DataBenchmarks.Conventions.Tests/DataBenchmarks.Conventions.Tests.csproj" />
+  </Folder>
+</Solution>

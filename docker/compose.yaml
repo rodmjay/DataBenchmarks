@@ -1,0 +1,73 @@
+# Database engines for DataBenchmarks. One profile per engine; SQLite needs no container.
+#   docker compose -f docker/compose.yaml --profile postgres up -d --wait
+# Usually you don't call this directly: ./bench <engine> brings the engine up for you.
+# Host ports are offset from the defaults so they don't collide with other local databases.
+# Credentials are throwaway local-only values (override with env vars if you like).
+
+name: databenchmarks
+
+services:
+  postgres:
+    profiles: [postgres]
+    image: postgres:17
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: bench
+      POSTGRES_DB: bench
+    ports: ["15432:5432"]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bench -d bench"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  sqlserver:
+    profiles: [sqlserver]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Bench_Passw0rd!}
+      MSSQL_PID: Developer
+    ports: ["11433:1433"]
+    volumes: [sqlserver-data:/var/opt/mssql]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' -b"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+
+  mysql:
+    profiles: [mysql]
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: bench
+      MYSQL_DATABASE: bench
+    ports: ["13306:3306"]
+    volumes: [mysql-data:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pbench"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  # Runs the whole suite inside the compose network, so only Docker is needed on the host:
+  #   ./bench postgres --in-docker
+  runner:
+    profiles: [runner]
+    build:
+      context: ..
+      dockerfile: docker/runner.Dockerfile
+    working_dir: /repo
+    volumes: ["..:/repo"]
+    environment:
+      DATABENCH_CS_POSTGRES: Host=postgres;Port=5432;Database=bench;Username=bench;Password=bench
+      DATABENCH_CS_SQLSERVER: Server=sqlserver,1433;Database=bench;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Bench_Passw0rd!};TrustServerCertificate=True
+      DATABENCH_CS_MYSQL: Server=mysql;Port=3306;Database=bench;User=root;Password=bench
+      DATABENCH_CS_SQLITE: Data Source=/tmp/databenchmarks.db;Pooling=True
+
+volumes:
+  postgres-data:
+  sqlserver-data:
+  mysql-data:

@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# DataBenchmarks entry point.
+#
+#   ./bench <engine> [options]      bring the engine up, seed it, verify, benchmark
+#   ./bench publish [engines...]    benchmark each engine (short job) and regenerate README results
+#   ./bench report                  regenerate README results from artifacts/ without running
+#   ./bench list                    list scenarios and approaches
+#   ./bench test                    build and run the conventions/correctness tests
+#   ./bench setup                   enable the git pre-commit hook (.githooks/)
+#   ./bench down                    stop all engine containers
+#
+# Engine options:
+#   --scenario <text>   only scenarios whose "Category/Name" contains <text>
+#   --approach A,B      only these approaches (names from Approaches.cs)
+#   --job <name>        BenchmarkDotNet job: dry | short | medium | default (default: short)
+#   --load              also run the concurrency test (throughput, p50/p95/p99, errors)
+#   --dataset <name>    small | standard (default: standard)
+#   --in-docker         run the .NET side in a container too (only Docker needed)
+#   -- <args>           anything after -- goes to BenchmarkDotNet
+#
+# Engines: sqlite (no container), postgres, sqlserver, mysql.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+ENGINES_DEFAULT="${DATABENCH_ENGINES:-sqlite postgres sqlserver}"
+COMPOSE=(docker compose -f docker/compose.yaml)
+
+runner() { dotnet run -c Release --no-build --project src/DataBenchmarks.Runner -- "$@"; }
+build() { dotnet build -c Release --nologo -v quiet DataBenchmarks.slnx >/dev/null; }
+
+engine_up() {
+  local engine=$1
+  if [[ "$engine" != sqlite && -z "${DATABENCH_IN_DOCKER:-}" ]]; then
+    echo "==> starting $engine"
+    "${COMPOSE[@]}" --profile "$engine" up -d --wait "$engine"
+  fi
+}
+
+bench_engine() {
+  local engine=$1; shift
+  local job=short dataset=standard load=0 in_docker=0
+  local pass=() bdn=()
+  while (($#)); do
+    case "$1" in
+      --scenario|--approach) pass+=("$1" "$2"); shift 2 ;;
+      --job) job=$2; shift 2 ;;
+      --dataset) dataset=$2; shift 2 ;;
+      --load) load=1; shift ;;
+      --in-docker) in_docker=1; shift ;;
+      --) shift; bdn=("$@"); break ;;
+      *) echo "unknown option: $1" >&2; exit 2 ;;
+    esac
+  done
+
+  engine_up "$engine"
+  if ((in_docker)); then
+    local args=("$engine" --job "$job" --dataset "$dataset" "${pass[@]}")
+    ((load)) && args+=(--load)
+    "${COMPOSE[@]}" --profile "$engine" --profile runner run --rm -e DATABENCH_IN_DOCKER=1 runner "${args[@]}" -- "${bdn[@]}"
+    return
+  fi
+
+  build
+  echo "==> seeding $engine ($dataset)"
+  runner seed --engine "$engine" --dataset "$dataset"
+  echo "==> benchmarking $engine (job: $job)"
+  runner run --engine "$engine" "${pass[@]}" --job "$job" "${bdn[@]}"
+  if ((load)); then
+    echo "==> load test $engine"
+    runner load --engine "$engine" "${pass[@]}"
+  fi
+}
+
+report() {
+  build
+  dotnet run -c Release --no-build --project src/DataBenchmarks.Reporting -- update \
+    --artifacts artifacts --results results --readme README.md \
+    --commit "$(git rev-parse --short HEAD 2>/dev/null || echo uncommitted)"
+}
+
+case "${1:-}" in
+  sqlite|postgres|sqlserver|mysql) bench_engine "$@" ;;
+  publish)
+    shift
+    engines=("$@"); ((${#engines[@]})) || read -ra engines <<<"$ENGINES_DEFAULT"
+    extra=(); [[ -n "${DATABENCH_LOAD:-}" ]] && extra+=(--load)
+    for engine in "${engines[@]}"; do bench_engine "$engine" --job short "${extra[@]}"; done
+    report ;;
+  report) report ;;
+  list) build; runner list ;;
+  test) dotnet test -c Release --solution DataBenchmarks.slnx ;;
+  setup) git config core.hooksPath .githooks && echo "pre-commit hook enabled (.githooks/pre-commit)" ;;
+  down) "${COMPOSE[@]}" --profile postgres --profile sqlserver --profile mysql down ;;
+  *) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

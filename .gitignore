@@ -1,0 +1,11 @@
+bin/
+obj/
+artifacts/
+BenchmarkDotNet.Artifacts/
+*.db
+*.db-shm
+*.db-wal
+.vs/
+.idea/
+*.user
+site/data/

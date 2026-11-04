@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- For approach/category descriptions and engine ordering only. -->
+    <ProjectReference Include="..\DataBenchmarks.Scenarios\DataBenchmarks.Scenarios.csproj" />
+  </ItemGroup>
+</Project>
